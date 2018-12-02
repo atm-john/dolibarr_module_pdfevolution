@@ -61,14 +61,15 @@ class Actionspdfevolution
      */
 	public function defineColumnField($parameters, &$pdfDoc, &$action, $hookmanager)
     {
-        global $conf, $user, $langs;
+        global $conf, $user, $langs, $db;
         
-        // Translations
-        $langs->loadLangs(array("pdfevolution@pdfevolution"));
         
         $contexts = explode(':',$parameters['context']);
         if ($pdfDoc->name == 'sponge' ||  $pdfDoc->name == 'sponge_btp' || $pdfDoc->name == 'eratosthene' || $pdfDoc->name == 'cyan' ){
             
+            // Translations
+            $langs->loadLangs(array("pdfevolution@pdfevolution"));
+
             $def = array(
                 'rank' => 55,
                 'width' => 20, // in mm
@@ -85,8 +86,21 @@ class Actionspdfevolution
             
             $pdfDoc->insertNewColumnDef('UnitPriceAfterDiscount', $def, 'discount',1);
             
-           
             
+/*
+            $def = array(
+                'rank' => 55,
+                'width' => 50, // in mm
+                'status' => true,
+                'title' => array(
+                    'label' => 'Ref'
+                ),
+                'border-left' => true, // add left line separator
+            );
+            $pdfDoc->cols['desc']['border-left'] = true;
+            $pdfDoc->insertNewColumnDef('Ref', $def, 'desc',0);
+            */
+
             if(!empty($conf->global->PDFEVOLUTION_DISABLE_COL_TOTALEXCLTAX)){
                 $pdfDoc->cols['totalexcltax']['status'] = false;
             }
@@ -132,6 +146,48 @@ class Actionspdfevolution
             }
             
             
+
+            
+            
+           // var_dump($extrafields);
+            // Load attribute_label
+            $extrafields = new ExtraFields($db);
+            $extrafields->fetch_name_optionals_label($parameters['object']->lines[0]->element);
+            if(!empty($extrafields->attribute_pos))
+            {
+                $lastCol = 'photo';
+                foreach($extrafields->attribute_pos as $key => $pos)
+                {
+                    $newCol = 'attribute_'.$key;
+                    
+                    
+                    $def = array(
+                        'width' => strlen($extrafields->attribute_label[$key])*2.5, // in mm
+                        'status' => false,
+                        'title' => array(
+                            'label' => $extrafields->attribute_label[$key]
+                        ),
+                        'border-left' => true, // add left line separator
+                    );
+                    
+                    //exit;
+                    
+                    if ($extrafields->attribute_list[$key] == 4){
+                        $def['status'] = true;
+                    }
+                    
+                    $pdfDoc->insertNewColumnDef( $newCol , $def, $lastCol,0);
+                    
+                    /*
+                    $extrafields->attribute_pos[$tab->name];
+                    $extrafields->attribute_type[$tab->name]=$tab->type;
+                    $extrafields->attribute_label[$tab->name]=$tab->label;
+                    $extrafields->attribute_entityid[$tab->name]=$tab->entity;
+                    $extrafields->attribute_param[$tab->name];*/
+                    $lastCol = $newCol;
+                }
+                
+            }
             
         }
         
@@ -151,7 +207,7 @@ class Actionspdfevolution
      */
     public function printPDFline($parameters, &$pdfDoc, &$action, $hookmanager)
     {
-        global $conf, $user, $langs;
+        global $conf, $user, $langs, $db;
         $pdf =& $parameters['pdf'];
         $i = $parameters['i'];
         $outputlangs = $parameters['outputlangs'];
@@ -181,7 +237,37 @@ class Actionspdfevolution
                 $pdfDoc->printStdColumnContent($pdf, $parameters['curY'], 'UnitPriceAfterDiscount', $celText );
                 $parameters['nexY'] = max($pdf->GetY(),$parameters['nexY']);
             }
-            return 1;
         }
+
+        
+
+        if ($pdfDoc->getColumnStatus('Ref'))
+        {
+            $object = $parameters['object'];
+            
+            if(!empty($object->lines[$i]->ref)){
+                $pdfDoc->printStdColumnContent($pdf, $parameters['curY'], 'Ref', $object->lines[$i]->ref );
+                $parameters['nexY'] = max($pdf->GetY(),$parameters['nexY']);
+            }
+
+        }
+        //var_dump($parameters['object']->lines[0]->array_options);exit;
+        
+        $extrafields = new ExtraFields($db);
+        $extrafields->fetch_name_optionals_label($parameters['object']->lines[$i]->element);
+        if(!empty($extrafields->attribute_pos) && !empty($parameters['object']->lines[$i]->array_options))
+        {
+            foreach($extrafields->attribute_pos as $key => $pos)
+            {
+                $newCol = 'attribute_'.$key;
+                $extrafieldKey = 'options_'.$key;
+                if ($pdfDoc->getColumnStatus($newCol) && !empty($parameters['object']->lines[$i]->array_options[$extrafieldKey]))
+                {
+                    $pdfDoc->printStdColumnContent($pdf, $parameters['curY'], $newCol, $parameters['object']->lines[$i]->array_options[$extrafieldKey] );
+                    $parameters['nexY'] = max($pdf->GetY(),$parameters['nexY']);
+                }
+            }
+        }
+        return 1;
     }
 }
